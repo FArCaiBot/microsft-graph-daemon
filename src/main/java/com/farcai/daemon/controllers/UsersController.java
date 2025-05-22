@@ -28,9 +28,9 @@ public class UsersController {
     public ResponseEntity<?> getSharedLink(
             @RequestParam String externalId,
             @RequestParam String rol,
-            @RequestParam(required = false) List<String> specificUsers
+            @RequestParam(required = false) String specificUsers
     ) {
-        return ResponseEntity.ok(userService.shareWithSpecificUsersOnly(externalId, rol, specificUsers));
+        return ResponseEntity.ok(userService.shareWithSpecificUserOnly(externalId, rol, specificUsers));
     }
 
     @GetMapping("permissions")
@@ -41,6 +41,11 @@ public class UsersController {
     @PostMapping("/invite")
     public ResponseEntity<?> setInvitation(@RequestParam String email, @RequestParam String name){
         return ResponseEntity.ok(userService.setInvitation(email, name));
+    }
+
+    @GetMapping("/{userId}")
+    public ResponseEntity<?> getUserInfo(@PathVariable String userId){
+        return ResponseEntity.ok(userService.getUserInfo(userId));
     }
 
 }

@@ -8,8 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.util.Arrays;
-import java.util.LinkedList;
+import java.util.*;
 import java.util.List;
 
 @Slf4j
@@ -24,9 +23,9 @@ public class UserService {
 
     public UserCollectionPage getUsers() {
         return graphServiceClient.users().buildRequest()
-                .select("id")
+                //.select("id")
                 .count(true)
-                .top(1)
+                //.top(1)
                 .get();
     }
 
@@ -45,24 +44,43 @@ public class UserService {
                 .get();
     }
 
-    public String shareWithSpecificUsersOnly(String fileId, String rol, List<String> userEmails) {
+    public String shareWithSpecificUserOnly(String fileId, String rol, String userEmail) {
         String fileUrl = getFileUrl(fileId);
 
-        for (String email : userEmails) {
+        try {
+            // 1. Verificar si el usuario existe en la organización
+            Optional<User> orgUser;
             try {
-                // 1. Obtener todos los permisos del archivo
-                PermissionCollectionPage existingPermissions = graphServiceClient.users(defaultEmail)
-                        .drive()
-                        .items(fileId)
-                        .permissions()
-                        .buildRequest()
-                        .get();
+                orgUser = Objects.requireNonNull(graphServiceClient.users().buildRequest()
+                        .get()).getCurrentPage().stream().filter(user-> {
+                    if(user.mail==null) return false;
+                    return Objects.equals(user.mail.toLowerCase(), userEmail.toLowerCase());
+                }).findFirst();
 
-                // 2. Buscar y eliminar permisos existentes para este usuario
-                existingPermissions.getCurrentPage().forEach(permission -> {
+                if (orgUser.isEmpty()) {
+                    log.warn("El usuario con email " + userEmail + " no pertenece o no ha sido invitado a la organización");
+                    return fileUrl;
+                }
+            } catch (Exception e) {
+                log.warn("El usuario con email " + userEmail + " no pertenece o no ha sido invitado a la organización");
+                return fileUrl;
+            }
+
+            // 2. Obtener todos los permisos del archivo
+            PermissionCollectionPage existingPermissions = graphServiceClient.users(defaultEmail)
+                    .drive()
+                    .items(fileId)
+                    .permissions()
+                    .buildRequest()
+                    .get();
+
+            // 3. Buscar y eliminar permisos existentes para este usuario
+            if (existingPermissions != null) {
+                List<Permission> permissions = existingPermissions.getCurrentPage();
+                for (Permission permission : permissions) {
                     if (permission.grantedTo != null &&
                             permission.grantedTo.user != null &&
-                            email.equalsIgnoreCase(getEmailFromGrantedTo(permission.grantedTo.user.id))) {
+                            orgUser.get().id.equals(permission.grantedTo.user.id)) {
 
                         // Eliminar permiso existente
                         graphServiceClient.users(defaultEmail)
@@ -72,30 +90,31 @@ public class UserService {
                                 .buildRequest()
                                 .delete();
                     }
-                });
-
-                // 3. Asignar nuevo permiso
-                LinkedList<DriveRecipient> recipients = new LinkedList<>();
-                DriveRecipient recipient = new DriveRecipient();
-                recipient.email = email;
-                recipients.add(recipient);
-
-                graphServiceClient.users(defaultEmail)
-                        .drive()
-                        .items(fileId)
-                        .invite(DriveItemInviteParameterSet
-                                .newBuilder()
-                                .withRecipients(recipients)
-                                .withRoles(Arrays.asList(rol))
-                                .withRequireSignIn(true)
-                                .withSendInvitation(false)
-                                .build())
-                        .buildRequest()
-                        .post();
-
-            } catch (Exception e) {
-                log.error("Error al actualizar permisos para " + email, e);
+                }
             }
+
+            // 4. Asignar nuevo permiso
+            LinkedList<DriveRecipient> recipients = new LinkedList<>();
+            DriveRecipient recipient = new DriveRecipient();
+            recipient.email = userEmail;
+
+            recipients.add(recipient);
+
+            graphServiceClient.users(defaultEmail)
+                    .drive()
+                    .items(fileId)
+                    .invite(DriveItemInviteParameterSet
+                            .newBuilder()
+                            .withRecipients(recipients)
+                            .withRoles(Arrays.asList(rol))
+                            .withRequireSignIn(true)
+                            .withSendInvitation(false)
+                            .build())
+                    .buildRequest()
+                    .post();
+
+        } catch (Exception e) {
+            log.error("Error al actualizar permisos para " + userEmail, e);
         }
 
         return fileUrl;
@@ -106,9 +125,9 @@ public class UserService {
         // Si no tienes el email, necesitarás una consulta adicional
         User fullUser = graphServiceClient.users(userId)
                 .buildRequest()
-                .select("mail,userPrincipalName")
+                .select("mail")
                 .get();
-        return fullUser.mail != null ? fullUser.mail : fullUser.userPrincipalName;
+        return fullUser.mail != null ? fullUser.mail : null;
     }
 
     private String getFileUrl(String externalId) {
@@ -137,5 +156,9 @@ public class UserService {
         invitation.inviteRedirectUrl= "https://m365.cloud.microsoft/";
         Invitation result = graphServiceClient.invitations().buildRequest().post(invitation);
         return graphServiceClient.users(result.invitedUser.id).buildRequest().get();
+    }
+
+    public Object getUserInfo(String userId) {
+        return graphServiceClient.users(userId).buildRequest().get();
     }
 }
