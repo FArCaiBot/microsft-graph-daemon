@@ -161,4 +161,12 @@ public class UserService {
     public Object getUserInfo(String userId) {
         return graphServiceClient.users(userId).buildRequest().get();
     }
+
+    public Object getDriveItemByPath(String path) {
+        return graphServiceClient.users(defaultEmail).drive().root().itemWithPath(path).buildRequest().get();
+    }
+
+    public Object getDriveItemById(String itemId){
+        return graphServiceClient.users(defaultEmail).drive().items(itemId).buildRequest().get();
+    }
 }
